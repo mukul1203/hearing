@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hearing - Audio Player</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎧 Hearing</h1>
+            <p class="subtitle">Sequential Audio Player</p>
+        </header>
+
+        <main class="player-container">
+            <div class="audio-info">
+                <div class="current-file" id="currentFile">Loading...</div>
+                <div class="progress-info" id="progressInfo">--:-- / --:--</div>
+            </div>
+
+            <div class="audio-controls">
+                <audio id="audioPlayer" preload="metadata">
+                    Your browser does not support the audio element.
+                </audio>
+                
+                <div class="control-buttons">
+                    <button id="prevBtn" class="control-btn" disabled>⏮️</button>
+                    <button id="playPauseBtn" class="control-btn main-btn">▶️</button>
+                    <button id="nextBtn" class="control-btn" disabled>⏭️</button>
+                </div>
+
+                <div class="progress-container">
+                    <div class="progress-bar" id="progressBar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                </div>
+
+                <div class="volume-container">
+                    <span>🔊</span>
+                    <input type="range" id="volumeSlider" min="0" max="100" value="70" class="volume-slider">
+                </div>
+            </div>
+
+            <div class="status" id="status">
+                <div class="connection-status">
+                    <span class="status-indicator" id="driveStatus">●</span> Google Drive
+                    <span class="status-indicator" id="dbStatus">●</span> Database
+                </div>
+                <div class="last-sync" id="lastSync">Last sync: Never</div>
+            </div>
+        </main>
+
+        <div class="settings-panel" id="settingsPanel">
+            <h3>Settings</h3>
+            <div class="credential-input">
+                <label for="googleDriveToken">Google Drive API Key:</label>
+                <input type="password" id="googleDriveToken" placeholder="Enter your Google Drive API key">
+            </div>
+            <div class="credential-input">
+                <label for="githubToken">GitHub Personal Access Token:</label>
+                <input type="password" id="githubToken" placeholder="Enter your GitHub Personal Access Token">
+            </div>
+            <div class="credential-input">
+                <label for="driveFolderId">Google Drive Folder ID:</label>
+                <input type="text" id="driveFolderId" placeholder="Enter the folder ID containing audio files">
+            </div>
+            <button id="saveCredentials" class="save-btn">Save Credentials</button>
+            <button id="testConnection" class="test-btn">Test Connection</button>
+        </div>
+
+        <button id="settingsToggle" class="settings-toggle">⚙️</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

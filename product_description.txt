@@ -1,0 +1,20 @@
+A simple web page that only does one thing - plays an audio.
+Which audio? I need not supply as a user. 
+It just picks in sequence from a series of audios that are present in a given
+folder in my google drive.
+The audio player has a backend as another github repository - https://github.com/mukul1203/hearing_db
+The player uses this repository to commit to a json file that acts as a backend
+database. In this database, player records the timestamp whenever I start and stop playing
+an audio.
+When I load the webpage from any device, it should pick the audio and timestamp from
+backend and resume from there (actually resume from 5 mins before that timestamp to restore context)
+
+I want to host the webpage on github pages.
+
+I will provide the needed credentials like github api token and google drive token.
+The credentials must be stored somewhere safe which is accessible to the webpage.
+You need to suggest me options for this.
+
+Your task is to write a very minimal and simple webpage in plain html, css and javascript.
+
+

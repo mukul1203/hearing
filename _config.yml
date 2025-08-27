@@ -1,0 +1,11 @@
+# GitHub Pages configuration
+title: Hearing - Sequential Audio Player
+description: A minimal web-based audio player with cross-device synchronization
+plugins:
+  - jekyll-relative-links
+relative_links:
+  enabled: true
+  collections: true
+include:
+  - README.md
+  - config-guide.md
