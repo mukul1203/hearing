@@ -78,8 +78,8 @@ class HearingPlayer {
 
         // Control buttons
         this.playPauseBtn.addEventListener('click', () => this.togglePlayPause());
-        this.prevBtn.addEventListener('click', () => this.previousTrack());
-        this.nextBtn.addEventListener('click', () => this.nextTrack());
+        this.prevBtn.addEventListener('click', () => this.skip5SecondsBackward());
+        this.nextBtn.addEventListener('click', () => this.skip5SecondsForward());
 
         // Progress bar
         this.progressBar.addEventListener('click', (e) => {
@@ -310,15 +310,16 @@ class HearingPlayer {
         }
     }
 
-    async previousTrack() {
-        if (this.currentIndex > 0) {
-            this.currentIndex--;
-            await this.loadCurrentTrack();
-            this.updateButtonStates();
-            if (this.isPlaying) {
-                this.audioPlayer.play();
-            }
-        }
+    skip5SecondsBackward() {
+        const newTime = Math.max(0, this.currentTime - 5);
+        this.seekTo(newTime);
+        console.log(`⏪ Skipped backward 5 seconds to ${newTime.toFixed(1)}s`);
+    }
+
+    skip5SecondsForward() {
+        const newTime = Math.min(this.duration, this.currentTime + 5);
+        this.seekTo(newTime);
+        console.log(`⏩ Skipped forward 5 seconds to ${newTime.toFixed(1)}s`);
     }
 
     async nextTrack() {
@@ -370,8 +371,9 @@ class HearingPlayer {
     }
 
     updateButtonStates() {
-        this.prevBtn.disabled = this.currentIndex === 0;
-        this.nextBtn.disabled = this.currentIndex === this.audioFiles.length - 1;
+        // Skip buttons are always enabled when audio is loaded
+        this.prevBtn.disabled = this.audioFiles.length === 0;
+        this.nextBtn.disabled = this.audioFiles.length === 0;
         this.playPauseBtn.disabled = this.audioFiles.length === 0;
     }
 
