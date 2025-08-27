@@ -271,6 +271,12 @@ class HearingPlayer {
             return;
         }
 
+        // Reset time and progress display immediately
+        this.currentTime = 0;
+        this.duration = 0;
+        this.updateProgress();
+        this.updateProgressInfo();
+
         const currentFile = this.audioFiles[this.currentIndex];
         this.currentFileDisplay.textContent = currentFile.name;
         
@@ -305,6 +311,7 @@ class HearingPlayer {
         if (this.currentIndex > 0) {
             this.currentIndex--;
             await this.loadCurrentTrack();
+            this.updateButtonStates();
             if (this.isPlaying) {
                 this.audioPlayer.play();
             }
@@ -315,6 +322,7 @@ class HearingPlayer {
         if (this.currentIndex < this.audioFiles.length - 1) {
             this.currentIndex++;
             await this.loadCurrentTrack();
+            this.updateButtonStates();
             if (this.isPlaying) {
                 this.audioPlayer.play();
             }
@@ -330,6 +338,9 @@ class HearingPlayer {
         if (this.duration > 0) {
             const percentage = (this.currentTime / this.duration) * 100;
             this.progressFill.style.width = `${percentage}%`;
+        } else {
+            // Reset progress bar when no duration available
+            this.progressFill.style.width = '0%';
         }
     }
 
@@ -342,7 +353,12 @@ class HearingPlayer {
         const currentTimeStr = `${currentMinutes}:${currentSeconds.toString().padStart(2, '0')}`;
         const durationStr = `${durationMinutes}:${durationSeconds.toString().padStart(2, '0')}`;
         
-        this.progressInfo.textContent = `${currentTimeStr} / ${durationStr}`;
+        // Show loading if duration is not available yet
+        if (this.duration === 0) {
+            this.progressInfo.textContent = `${currentTimeStr} / --:--`;
+        } else {
+            this.progressInfo.textContent = `${currentTimeStr} / ${durationStr}`;
+        }
     }
 
     updateButtonStates() {
