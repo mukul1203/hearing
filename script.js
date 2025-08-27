@@ -57,7 +57,10 @@ class HearingPlayer {
         });
 
         this.audioPlayer.addEventListener('ended', () => {
+            // Log the completion of current track at its full duration
+            this.currentTime = this.duration;
             this.recordTimestamp('stop');
+            console.log('🏁 Track finished:', this.audioFiles[this.currentIndex]?.name);
             this.nextTrack();
         });
 
@@ -326,6 +329,11 @@ class HearingPlayer {
             if (this.isPlaying) {
                 this.audioPlayer.play();
             }
+        } else {
+            // End of playlist - stop playing
+            this.isPlaying = false;
+            this.playPauseBtn.textContent = '▶️';
+            console.log('🎵 Playlist finished');
         }
     }
 
