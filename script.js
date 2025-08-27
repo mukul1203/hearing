@@ -13,6 +13,11 @@ class HearingPlayer {
         this.dbData = null;
         this.lastSyncTime = null;
         
+        // Folder management for lazy loading
+        this.allFolders = [];
+        this.currentFolderIndex = 0;
+        this.isLoadingNextFolder = false;
+        
         this.initializeElements();
         this.initializeEventListeners();
         this.loadCredentials();
@@ -29,6 +34,7 @@ class HearingPlayer {
         this.volumeSlider = document.getElementById('volumeSlider');
         this.currentFileDisplay = document.getElementById('currentFile');
         this.progressInfo = document.getElementById('progressInfo');
+        this.folderProgress = document.getElementById('folderProgress');
         this.settingsPanel = document.getElementById('settingsPanel');
         this.settingsToggle = document.getElementById('settingsToggle');
         this.driveStatus = document.getElementById('driveStatus');
@@ -235,38 +241,20 @@ class HearingPlayer {
             }
             
             const foldersData = await foldersResponse.json();
-            const subfolders = foldersData.files;
+            this.allFolders = foldersData.files;
             
-            console.log(`Found ${subfolders.length} subfolders`);
+            console.log(`📁 Found ${this.allFolders.length} folders, loading first folder only...`);
             
-            // Now load audio files from each subfolder
-            this.audioFiles = [];
-            
-            for (const folder of subfolders) {
-                console.log(`Loading files from folder: ${folder.name}`);
-                
-                const filesResponse = await fetch(`https://www.googleapis.com/drive/v3/files?q='${folder.id}'+in+parents+and+(mimeType='audio/mpeg'+or+mimeType='audio/mp3'+or+mimeType='audio/wav'+or+mimeType='audio/m4a'+or+mimeType='audio/mp4'+or+mimeType='audio/aac')&orderBy=name&fields=files(id,name,mimeType)&key=${this.credentials.googleDriveToken}`);
-                
-                if (filesResponse.ok) {
-                    const filesData = await filesResponse.json();
-                    const folderFiles = filesData.files.map(file => ({
-                        id: file.id,
-                        name: file.name,
-                        folderName: folder.name,
-                        folderId: folder.id,
-                        url: `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
-                    }));
-                    
-                    this.audioFiles.push(...folderFiles);
-                    console.log(`  Added ${folderFiles.length} files from ${folder.name}`);
-                } else {
-                    console.warn(`Failed to load files from folder: ${folder.name}`);
-                }
+            // Load only the first folder's files initially
+            if (this.allFolders.length > 0) {
+                await this.loadCurrentFolder();
+            } else {
+                console.warn('No subfolders found');
+                this.audioFiles = [];
             }
             
             this.updateConnectionStatus('driveStatus', 'connected');
             this.updateButtonStates();
-            console.log(`🎵 Total loaded: ${this.audioFiles.length} audio files from ${subfolders.length} folders`);
             
         } catch (error) {
             console.error('Failed to load audio files:', error);
@@ -274,26 +262,107 @@ class HearingPlayer {
         }
     }
 
-    async resumePlayback() {
-        if (!this.dbData || !this.audioFiles.length) return;
+    async loadCurrentFolder() {
+        if (this.currentFolderIndex >= this.allFolders.length) {
+            console.log('🎵 All folders completed');
+            return;
+        }
 
-        // Find the current file in our audio list (check both name alone and folder/name format)
-        const fileIndex = this.audioFiles.findIndex(file => {
-            return file.name === this.dbData.currentFile || 
-                   `${file.folderName} / ${file.name}` === this.dbData.currentFile ||
-                   `${file.folderName}/${file.name}` === this.dbData.currentFile;
-        });
+        const folder = this.allFolders[this.currentFolderIndex];
+        console.log(`📂 Loading folder: ${folder.name}`);
         
+        try {
+            const filesResponse = await fetch(`https://www.googleapis.com/drive/v3/files?q='${folder.id}'+in+parents+and+(mimeType='audio/mpeg'+or+mimeType='audio/mp3'+or+mimeType='audio/wav'+or+mimeType='audio/m4a'+or+mimeType='audio/mp4'+or+mimeType='audio/aac')&orderBy=name&fields=files(id,name,mimeType)&key=${this.credentials.googleDriveToken}`);
+            
+            if (filesResponse.ok) {
+                const filesData = await filesResponse.json();
+                const folderFiles = filesData.files.map(file => ({
+                    id: file.id,
+                    name: file.name,
+                    folderName: folder.name,
+                    folderId: folder.id,
+                    url: `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
+                }));
+                
+                this.audioFiles = folderFiles; // Replace current files with new folder files
+                this.currentIndex = 0; // Reset to start of new folder
+                
+                console.log(`  ✅ Loaded ${folderFiles.length} files from ${folder.name}`);
+                this.updateFolderProgress();
+            } else {
+                console.warn(`❌ Failed to load files from folder: ${folder.name}`);
+                this.audioFiles = [];
+            }
+        } catch (error) {
+            console.error(`Error loading folder ${folder.name}:`, error);
+            this.audioFiles = [];
+        }
+    }
+
+    async resumePlayback() {
+        if (!this.dbData) return;
+
+        const savedFile = this.dbData.currentFile;
+        if (!savedFile) {
+            // No saved file, start from beginning of first folder
+            if (this.audioFiles.length > 0) {
+                this.currentIndex = 0;
+                await this.loadCurrentTrack();
+                this.updateFolderProgress();
+            }
+            return;
+        }
+
+        // Try to find the saved file in the current folder first
+        let fileIndex = this.audioFiles.findIndex(file => {
+            return file.name === savedFile || 
+                   `${file.folderName} / ${file.name}` === savedFile ||
+                   `${file.folderName}/${file.name}` === savedFile;
+        });
+
         if (fileIndex !== -1) {
+            // Found in current folder
             this.currentIndex = fileIndex;
             await this.loadCurrentTrack();
-            
             const resumeTime = Math.max(0, this.dbData.currentTime);
             this.seekTo(resumeTime);
-        } else if (this.audioFiles.length > 0) {
-            // If the previous file is not found, start from the beginning
-            this.currentIndex = 0;
-            await this.loadCurrentTrack();
+            this.updateFolderProgress();
+            console.log(`⏯️ Resumed playback: ${savedFile} at ${resumeTime.toFixed(1)}s`);
+        } else {
+            // File not in current folder, need to search through all folders
+            console.log(`🔍 File "${savedFile}" not in current folder, searching all folders...`);
+            
+            for (let folderIndex = 0; folderIndex < this.allFolders.length; folderIndex++) {
+                this.currentFolderIndex = folderIndex;
+                await this.loadCurrentFolder();
+                
+                fileIndex = this.audioFiles.findIndex(file => {
+                    return file.name === savedFile || 
+                           `${file.folderName} / ${file.name}` === savedFile ||
+                           `${file.folderName}/${file.name}` === savedFile;
+                });
+                
+                if (fileIndex !== -1) {
+                    // Found the file!
+                    this.currentIndex = fileIndex;
+                    await this.loadCurrentTrack();
+                    const resumeTime = Math.max(0, this.dbData.currentTime);
+                    this.seekTo(resumeTime);
+                    this.updateFolderProgress();
+                    console.log(`✅ Found and resumed: ${savedFile} in folder ${this.audioFiles[0]?.folderName} at ${resumeTime.toFixed(1)}s`);
+                    return;
+                }
+            }
+            
+            // File not found in any folder, start from beginning
+            console.warn(`⚠️ File "${savedFile}" not found in any folder, starting from beginning`);
+            this.currentFolderIndex = 0;
+            await this.loadCurrentFolder();
+            if (this.audioFiles.length > 0) {
+                this.currentIndex = 0;
+                await this.loadCurrentTrack();
+            }
+            this.updateFolderProgress();
         }
     }
 
@@ -358,26 +427,46 @@ class HearingPlayer {
     }
 
     async nextTrack() {
+        if (this.isLoadingNextFolder) {
+            console.log('⏳ Already loading next folder, please wait...');
+            return;
+        }
+
         if (this.currentIndex < this.audioFiles.length - 1) {
-            const currentFolder = this.audioFiles[this.currentIndex]?.folderName;
+            // Move to next track in current folder
             this.currentIndex++;
-            const nextFolder = this.audioFiles[this.currentIndex]?.folderName;
-            
-            // Log folder transition
-            if (currentFolder && nextFolder && currentFolder !== nextFolder) {
-                console.log(`📁 Moving from folder "${currentFolder}" to "${nextFolder}"`);
-            }
-            
             await this.loadCurrentTrack();
             this.updateButtonStates();
             if (this.isPlaying) {
                 this.audioPlayer.play();
             }
         } else {
-            // End of playlist - stop playing
-            this.isPlaying = false;
-            this.playPauseBtn.textContent = '▶️';
-            console.log('🎵 Playlist finished - all folders completed');
+            // End of current folder - try to load next folder
+            if (this.currentFolderIndex < this.allFolders.length - 1) {
+                this.isLoadingNextFolder = true;
+                console.log(`📁 End of folder "${this.audioFiles[0]?.folderName}" - loading next folder...`);
+                
+                this.currentFolderIndex++;
+                await this.loadCurrentFolder();
+                
+                if (this.audioFiles.length > 0) {
+                    await this.loadCurrentTrack();
+                    this.updateButtonStates();
+                    if (this.isPlaying) {
+                        this.audioPlayer.play();
+                    }
+                    console.log(`📁 Now playing from folder: ${this.audioFiles[0]?.folderName}`);
+                } else {
+                    console.warn('⚠️ Next folder loaded but contains no audio files');
+                }
+                
+                this.isLoadingNextFolder = false;
+            } else {
+                // End of all folders - stop playing
+                this.isPlaying = false;
+                this.playPauseBtn.textContent = '▶️';
+                console.log('🎵 Playlist finished - all folders completed');
+            }
         }
     }
 
@@ -428,6 +517,15 @@ class HearingPlayer {
     updateLastSync() {
         if (this.lastSyncTime) {
             this.lastSync.textContent = `Last sync: ${this.lastSyncTime.toLocaleTimeString()}`;
+        }
+    }
+
+    updateFolderProgress() {
+        if (this.allFolders.length > 0) {
+            const currentFolderName = this.audioFiles[0]?.folderName || 'Unknown';
+            this.folderProgress.textContent = `Folder ${this.currentFolderIndex + 1} of ${this.allFolders.length}: ${currentFolderName}`;
+        } else {
+            this.folderProgress.textContent = 'No folders loaded';
         }
     }
 

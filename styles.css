@@ -68,6 +68,12 @@ header h1 {
     font-size: 0.9em;
 }
 
+.folder-progress {
+    color: #888;
+    font-size: 0.8em;
+    margin-top: 3px;
+}
+
 .control-buttons {
     display: flex;
     align-items: center;
