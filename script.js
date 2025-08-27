@@ -202,7 +202,7 @@ class HearingPlayer {
 
             if (response.ok) {
                 const data = await response.json();
-                const content = atob(data.content);
+                const content = this.unicodeSafeBase64Decode(data.content);
                 this.dbData = JSON.parse(content);
                 this.updateConnectionStatus('dbStatus', 'connected');
                 this.lastSyncTime = new Date();
@@ -227,22 +227,47 @@ class HearingPlayer {
         try {
             this.updateConnectionStatus('driveStatus', 'connecting');
             
-            const response = await fetch(`https://www.googleapis.com/drive/v3/files?q='${this.credentials.driveFolderId}'+in+parents+and+(mimeType='audio/mpeg'+or+mimeType='audio/mp3'+or+mimeType='audio/wav'+or+mimeType='audio/m4a')&orderBy=name&fields=files(id,name,mimeType)&key=${this.credentials.googleDriveToken}`);
-
-            if (response.ok) {
-                const data = await response.json();
-                this.audioFiles = data.files.map(file => ({
-                    id: file.id,
-                    name: file.name,
-                    url: `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
-                }));
-                
-                this.updateConnectionStatus('driveStatus', 'connected');
-                this.updateButtonStates();
-                console.log(`Loaded ${this.audioFiles.length} audio files`);
-            } else {
-                throw new Error('Failed to load audio files');
+            // First, get all subfolders from the main folder
+            const foldersResponse = await fetch(`https://www.googleapis.com/drive/v3/files?q='${this.credentials.driveFolderId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'&orderBy=name&fields=files(id,name)&key=${this.credentials.googleDriveToken}`);
+            
+            if (!foldersResponse.ok) {
+                throw new Error('Failed to load subfolders');
             }
+            
+            const foldersData = await foldersResponse.json();
+            const subfolders = foldersData.files;
+            
+            console.log(`Found ${subfolders.length} subfolders`);
+            
+            // Now load audio files from each subfolder
+            this.audioFiles = [];
+            
+            for (const folder of subfolders) {
+                console.log(`Loading files from folder: ${folder.name}`);
+                
+                const filesResponse = await fetch(`https://www.googleapis.com/drive/v3/files?q='${folder.id}'+in+parents+and+(mimeType='audio/mpeg'+or+mimeType='audio/mp3'+or+mimeType='audio/wav'+or+mimeType='audio/m4a'+or+mimeType='audio/mp4'+or+mimeType='audio/aac')&orderBy=name&fields=files(id,name,mimeType)&key=${this.credentials.googleDriveToken}`);
+                
+                if (filesResponse.ok) {
+                    const filesData = await filesResponse.json();
+                    const folderFiles = filesData.files.map(file => ({
+                        id: file.id,
+                        name: file.name,
+                        folderName: folder.name,
+                        folderId: folder.id,
+                        url: `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
+                    }));
+                    
+                    this.audioFiles.push(...folderFiles);
+                    console.log(`  Added ${folderFiles.length} files from ${folder.name}`);
+                } else {
+                    console.warn(`Failed to load files from folder: ${folder.name}`);
+                }
+            }
+            
+            this.updateConnectionStatus('driveStatus', 'connected');
+            this.updateButtonStates();
+            console.log(`🎵 Total loaded: ${this.audioFiles.length} audio files from ${subfolders.length} folders`);
+            
         } catch (error) {
             console.error('Failed to load audio files:', error);
             this.updateConnectionStatus('driveStatus', 'disconnected');
@@ -252,8 +277,12 @@ class HearingPlayer {
     async resumePlayback() {
         if (!this.dbData || !this.audioFiles.length) return;
 
-        // Find the current file in our audio list
-        const fileIndex = this.audioFiles.findIndex(file => file.name === this.dbData.currentFile);
+        // Find the current file in our audio list (check both name alone and folder/name format)
+        const fileIndex = this.audioFiles.findIndex(file => {
+            return file.name === this.dbData.currentFile || 
+                   `${file.folderName} / ${file.name}` === this.dbData.currentFile ||
+                   `${file.folderName}/${file.name}` === this.dbData.currentFile;
+        });
         
         if (fileIndex !== -1) {
             this.currentIndex = fileIndex;
@@ -281,7 +310,13 @@ class HearingPlayer {
         this.updateProgressInfo();
 
         const currentFile = this.audioFiles[this.currentIndex];
-        this.currentFileDisplay.textContent = currentFile.name;
+        
+        // Display folder context along with file name
+        if (currentFile.folderName) {
+            this.currentFileDisplay.textContent = `${currentFile.folderName} / ${currentFile.name}`;
+        } else {
+            this.currentFileDisplay.textContent = currentFile.name;
+        }
         
         // Set the audio source with authentication
         this.audioPlayer.src = '';
@@ -324,7 +359,15 @@ class HearingPlayer {
 
     async nextTrack() {
         if (this.currentIndex < this.audioFiles.length - 1) {
+            const currentFolder = this.audioFiles[this.currentIndex]?.folderName;
             this.currentIndex++;
+            const nextFolder = this.audioFiles[this.currentIndex]?.folderName;
+            
+            // Log folder transition
+            if (currentFolder && nextFolder && currentFolder !== nextFolder) {
+                console.log(`📁 Moving from folder "${currentFolder}" to "${nextFolder}"`);
+            }
+            
             await this.loadCurrentTrack();
             this.updateButtonStates();
             if (this.isPlaying) {
@@ -334,7 +377,7 @@ class HearingPlayer {
             // End of playlist - stop playing
             this.isPlaying = false;
             this.playPauseBtn.textContent = '▶️';
-            console.log('🎵 Playlist finished');
+            console.log('🎵 Playlist finished - all folders completed');
         }
     }
 
@@ -406,15 +449,18 @@ class HearingPlayer {
     async recordTimestamp(action) {
         if (!this.credentials.githubToken || !this.audioFiles[this.currentIndex]) return;
 
+        const currentFile = this.audioFiles[this.currentIndex];
+        const fileIdentifier = currentFile.folderName ? `${currentFile.folderName} / ${currentFile.name}` : currentFile.name;
+        
         const timestamp = {
             action: action,
-            file: this.audioFiles[this.currentIndex].name,
+            file: fileIdentifier,
             time: this.currentTime,
             timestamp: new Date().toISOString()
         };
 
         // Update local database
-        this.dbData.currentFile = this.audioFiles[this.currentIndex].name;
+        this.dbData.currentFile = fileIdentifier;
         this.dbData.currentTime = this.currentTime;
         this.dbData.lastUpdated = timestamp.timestamp;
         this.dbData.history.push(timestamp);
@@ -424,6 +470,65 @@ class HearingPlayer {
             await this.saveToGitHub();
         } catch (error) {
             console.error('Failed to save timestamp:', error);
+        }
+    }
+
+    unicodeSafeBase64Encode(str) {
+        // Convert Unicode string to base64 safely
+        try {
+            // Use TextEncoder for modern browsers
+            if (typeof TextEncoder !== 'undefined') {
+                const encoder = new TextEncoder();
+                const bytes = encoder.encode(str);
+                let binary = '';
+                for (let i = 0; i < bytes.length; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                return btoa(binary);
+            } else {
+                // Fallback for older browsers
+                return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function(match, p1) {
+                    return String.fromCharCode('0x' + p1);
+                }));
+            }
+        } catch (error) {
+            console.error('Base64 encoding error:', error);
+            // Last resort: try to clean the string
+            const cleanStr = str.replace(/[^\x00-\x7F]/g, "?");
+            return btoa(cleanStr);
+        }
+    }
+
+    unicodeSafeBase64Decode(base64Str) {
+        // Convert base64 to Unicode string safely
+        try {
+            // Use TextDecoder for modern browsers
+            if (typeof TextDecoder !== 'undefined') {
+                const binary = atob(base64Str);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+                const decoder = new TextDecoder();
+                return decoder.decode(bytes);
+            } else {
+                // Fallback for older browsers
+                const binary = atob(base64Str);
+                let result = '';
+                for (let i = 0; i < binary.length; i++) {
+                    result += '%' + ('00' + binary.charCodeAt(i).toString(16)).slice(-2);
+                }
+                return decodeURIComponent(result);
+            }
+        } catch (error) {
+            console.error('Base64 decoding error:', error);
+            // Fallback to regular atob
+            try {
+                return atob(base64Str);
+            } catch (fallbackError) {
+                console.error('Fallback atob failed:', fallbackError);
+                return '';
+            }
         }
     }
 
@@ -443,8 +548,9 @@ class HearingPlayer {
                 sha = data.sha;
             }
 
-            // Update the file
-            const content = btoa(JSON.stringify(this.dbData, null, 2));
+            // Update the file - use Unicode-safe base64 encoding
+            const jsonString = JSON.stringify(this.dbData, null, 2);
+            const content = this.unicodeSafeBase64Encode(jsonString);
             const updateResponse = await fetch('https://api.github.com/repos/mukul1203/hearing_db/contents/database.json', {
                 method: 'PUT',
                 headers: {
