@@ -256,8 +256,7 @@ class HearingPlayer {
             this.currentIndex = fileIndex;
             await this.loadCurrentTrack();
             
-            // Resume from 10 seconds before the last timestamp
-            const resumeTime = Math.max(0, this.dbData.currentTime - 10);
+            const resumeTime = Math.max(0, this.dbData.currentTime);
             this.seekTo(resumeTime);
         } else if (this.audioFiles.length > 0) {
             // If the previous file is not found, start from the beginning
